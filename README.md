@@ -1,10 +1,8 @@
 CEmGBA
 ====
-CEmGBA is an unofficial fork of mGBA with an implemented "Cheat Engine"-like functionality
-Below is still the original README of the mGBA project
-
-
-
+#### CEmGBA is an unofficial fork of mGBA with an implemented "Cheat Engine"-like functionality
+#### Below is still the original README of the mGBA project
+--------
 
 mGBA is an emulator for running Game Boy Advance games. It aims to be faster and more accurate than many existing Game Boy Advance emulators, as well as adding features that other emulators lack. It also supports Game Boy and Game Boy Color games.
 
