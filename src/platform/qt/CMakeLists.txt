@@ -104,6 +104,7 @@ set(SOURCE_FILES
 	AssetTile.cpp
 	AssetView.cpp
 	AudioProcessor.cpp
+	CheatEngine.cpp
 	CheatsModel.cpp
 	CheatsView.cpp
 	CheckBoxDelegate.cpp
@@ -179,6 +180,7 @@ set(UI_FILES
 	ArchiveInspector.ui
 	AssetTile.ui
 	BattleChipView.ui
+	CheatEngine.ui
 	CheatsView.ui
 	DebuggerConsole.ui
 	DolphinConnector.ui

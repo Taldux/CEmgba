@@ -27,6 +27,7 @@
 #include "AudioProcessor.h"
 #include "BattleChipView.h"
 #include "CheatsView.h"
+#include "CheatEngine.h"
 #include "ConfigController.h"
 #include "CoreController.h"
 #include "DebuggerConsole.h"
@@ -1740,7 +1741,10 @@ void Window::setupMenu(QMenuBar* menubar) {
 		m_sensorView->raise();
 	}, "tools");
 
+	
+
 	addGameAction(tr("&Cheats..."), "cheatsWindow", openControllerTView<CheatsView>(), "tools");
+	addGameAction(tr("&CheatEngine..."), "cheatsEngine", openControllerTView<CheatEngine>(), "tools");
 #ifdef ENABLE_SCRIPTING
 	m_actions.addAction(tr("Scripting..."), "scripting", this, &Window::scriptingOpen, "tools");
 #endif
