@@ -42,7 +42,7 @@ private slots:
     void onImportMap();
     void onValueChanged();
     void onCheatTableSelectionChanged();
-    void onFreezeTimer(); // For maintaining frozen values
+    void onFreezeTimer();
 
 private:
     void setupUI();
@@ -58,10 +58,6 @@ private:
     // Main layout components
     QWidget *m_centralWidget;
     QSplitter *m_mainSplitter;
-
-    // Memory viewer - REMOVED (functionality exists elsewhere)
-
-    // Memory search - REMOVED (not needed for direct cheat management)
 
     // Cheat manager
     QGroupBox *m_cheatGroup;
@@ -82,7 +78,6 @@ private:
     QTextEdit *m_logOutput;
     QLabel *m_statusLabel;
 
-    // Data structures
     struct CheatEntry {
         QString address;
         QString value;
@@ -90,10 +85,9 @@ private:
         QString type;
         bool frozen;
         bool enabled;
-        struct mCheatSet* cheatSet; // Pointer to the actual mGBA cheat set
+        struct mCheatSet* cheatSet;
     };
 
-    // CheatEntry-dependent functions (declared after struct definition)
     void applyCheat(CheatEntry& cheat);
     void removeCheat(CheatEntry& cheat);
     void freezeCheat(CheatEntry& cheat);
