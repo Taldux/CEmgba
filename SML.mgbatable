@@ -1,0 +1,40 @@
+{
+  "game": "Super Mario Land",
+  "version": "1.0",
+  "author": "Meksi, Ba",
+  "description": "Example Cheats for Super Mario Land",
+  "cheats": [
+    {
+      "address": "0xDA02",
+      "value": "9",
+      "description": "Infinite Timer",
+      "type": "Byte",
+      "enabled": false,
+      "frozen": true
+    },
+    {
+      "address": "0xC203",
+      "value": "5",
+      "description": "Mario's Pose",
+      "type": "Byte",
+      "enabled": false,
+      "frozen": true
+    },
+    {
+      "address": "0xDA15",
+      "value": "99",
+      "description": "Infinite Lives",
+      "type": "Byte",
+      "enabled": false,
+      "frozen": true
+    },
+    {
+      "address": "0xC0A2",
+      "value": "10",
+      "description": "100000 Score",
+      "type": "Byte",
+      "enabled": false,
+      "frozen": true
+    }
+  ]
+}

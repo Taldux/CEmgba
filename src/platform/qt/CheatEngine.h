@@ -17,9 +17,14 @@
 #include <QtWidgets/QTextEdit>
 #include <QtWidgets/QSplitter>
 #include <QtWidgets/QHeaderView>
-#include <QtCore/QTimer>
 #include <QtCore/QDebug>
-#include "CoreController.h" 
+#include <QtCore/QTimer>
+#include "CoreController.h"
+
+extern "C" {
+#include <mgba/core/cheats.h>
+#include <mgba/core/core.h>
+} 
 
 
 
@@ -32,51 +37,38 @@ public:
     ~CheatEngine();
 
 private slots:
-    void onSearchMemory();
     void onAddCheat();
     void onRemoveCheat();
-    void onToggleFreeze();
-    void onMemoryRefresh();
+    void onImportMap();
     void onValueChanged();
     void onCheatTableSelectionChanged();
-    void onMemoryTableSelectionChanged();
+    void onFreezeTimer(); // For maintaining frozen values
 
 private:
     void setupUI();
-    void setupMemoryViewer();
     void setupCheatManager();
-    void setupSearchPanel();
-    void updateMemoryTable();
     void updateCheatTable();
+    
+    // mGBA integration functions (using basic types)
+    void initCheatDevice();
+    int getWidthFromType(const QString& type);
+    uint32_t parseAddress(const QString& address);
+    int32_t parseValue(const QString& value, const QString& type);
 
     // Main layout components
     QWidget *m_centralWidget;
     QSplitter *m_mainSplitter;
-    QSplitter *m_rightSplitter;
 
-    // Memory viewer
-    QGroupBox *m_memoryGroup;
-    QTableWidget *m_memoryTable;
-    QLineEdit *m_addressInput;
-    QPushButton *m_refreshButton;
-    QPushButton *m_gotoButton;
+    // Memory viewer - REMOVED (functionality exists elsewhere)
 
-    // Memory search
-    QGroupBox *m_searchGroup;
-    QLineEdit *m_searchValue;
-    QComboBox *m_searchType;
-    QComboBox *m_compareType;
-    QPushButton *m_searchButton;
-    QPushButton *m_nextScanButton;
-    QPushButton *m_resetButton;
-    QLabel *m_resultsLabel;
+    // Memory search - REMOVED (not needed for direct cheat management)
 
     // Cheat manager
     QGroupBox *m_cheatGroup;
     QTableWidget *m_cheatTable;
     QPushButton *m_addCheatButton;
     QPushButton *m_removeCheatButton;
-    QPushButton *m_toggleFreezeButton;
+    QPushButton *m_importMapButton;
 
     // Cheat editor
     QGroupBox *m_editorGroup;
@@ -90,9 +82,6 @@ private:
     QTextEdit *m_logOutput;
     QLabel *m_statusLabel;
 
-    // Timer for auto-refresh
-    QTimer *m_refreshTimer;
-
     // Data structures
     struct CheatEntry {
         QString address;
@@ -101,19 +90,21 @@ private:
         QString type;
         bool frozen;
         bool enabled;
+        struct mCheatSet* cheatSet; // Pointer to the actual mGBA cheat set
     };
 
-    struct MemoryEntry {
-        QString address;
-        QString value;
-        QString oldValue;
-        bool changed;
-    };
+    // CheatEntry-dependent functions (declared after struct definition)
+    void applyCheat(CheatEntry& cheat);
+    void removeCheat(CheatEntry& cheat);
+    void freezeCheat(CheatEntry& cheat);
+    void unfreezeCheat(CheatEntry& cheat);
 
     QList<CheatEntry> m_cheats;
-    QList<MemoryEntry> m_memoryEntries;
-    QList<QString> m_searchResults;
     std::shared_ptr<QGBA::CoreController> m_controller;
+    
+    // mGBA cheat system integration
+    struct mCheatDevice* m_cheatDevice;
+    QTimer* m_freezeTimer;
 
 };
 

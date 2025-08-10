@@ -1,9 +1,20 @@
 #include "CheatEngine.h"
 #include "CoreController.h"
 #include <QtWidgets/QApplication>
-#include <QtCore/QTime>
+#include <QtWidgets/QFileDialog>
+#include <QtWidgets/QMessageBox>
 #include <QtCore/QRandomGenerator>
+#include <QtCore/QTimer>
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonObject>
+#include <QtCore/QJsonArray>
+#include <QtCore/QFile>
 #include <qstatusbar.h>
+
+extern "C" {
+#include <mgba/core/cheats.h>
+#include <mgba/core/core.h>
+}
 
 using QGBA::CoreController; 
 
@@ -11,49 +22,44 @@ using QGBA::CoreController;
 CheatEngine::CheatEngine(std::shared_ptr<CoreController> controller, QWidget *parent)
     : QMainWindow(parent)
     , m_centralWidget(nullptr)
-    , m_refreshTimer(new QTimer(this))
     , m_controller(std::move(controller))
+    , m_cheatDevice(nullptr)
+    , m_freezeTimer(new QTimer(this))
 {
     setupUI();
+    initCheatDevice();
 
-    // Setup auto refresh timer
-    m_refreshTimer->setInterval(1000); // 1 second
-    connect(m_refreshTimer, &QTimer::timeout, this, &CheatEngine::onMemoryRefresh);
-    m_refreshTimer->start();
+    m_freezeTimer->setInterval(16); // Update every ~16ms (60 FPS)
+    connect(m_freezeTimer, &QTimer::timeout, this, &CheatEngine::onFreezeTimer);
+    m_freezeTimer->start();
 
-    // Initialize with some sample data
-    updateMemoryTable();
     updateCheatTable();
 }
 CheatEngine::~CheatEngine()
 {
+    for (auto& cheat : m_cheats) {
+        if (cheat.cheatSet) {
+            removeCheat(cheat);
+        }
+    }
 }
 
 void CheatEngine::setupUI()
 {
     setWindowTitle("GBA Cheat Engine");
-    setMinimumSize(1000, 700);
+    setMinimumSize(600, 500);
 
     m_centralWidget = new QWidget;
     setCentralWidget(m_centralWidget);
 
-    // Main splitter 
-    m_mainSplitter = new QSplitter(Qt::Horizontal);
+    // Main splitter for vertical layout
+    m_mainSplitter = new QSplitter(Qt::Vertical);
 
-    // Right splitter 
-    m_rightSplitter = new QSplitter(Qt::Vertical);
-
-    setupMemoryViewer();
-    setupSearchPanel();
     setupCheatManager();
 
-    // Add panels to splitters
-    m_mainSplitter->addWidget(m_memoryGroup);
-    m_mainSplitter->addWidget(m_rightSplitter);
-
-    m_rightSplitter->addWidget(m_searchGroup);
-    m_rightSplitter->addWidget(m_cheatGroup);
-    m_rightSplitter->addWidget(m_editorGroup);
+    // Add panels to splitter
+    m_mainSplitter->addWidget(m_cheatGroup);
+    m_mainSplitter->addWidget(m_editorGroup);
 
     // Setup log output
     m_logOutput = new QTextEdit;
@@ -73,100 +79,7 @@ void CheatEngine::setupUI()
     m_centralWidget->setLayout(mainLayout);
 
     // Set splitter proportions
-    m_mainSplitter->setSizes({500, 500});
-    m_rightSplitter->setSizes({200, 300, 150});
-}
-
-void CheatEngine::setupMemoryViewer()
-{
-    m_memoryGroup = new QGroupBox("Memory Viewer");
-
-    // Memory table
-    m_memoryTable = new QTableWidget(0, 4);
-    QStringList headers = {"adress", "value", "old value", "type"};
-    m_memoryTable->setHorizontalHeaderLabels(headers);
-    m_memoryTable->horizontalHeader()->setStretchLastSection(true);
-    m_memoryTable->setSelectionBehavior(QAbstractItemView::SelectRows);
-    m_memoryTable->setAlternatingRowColors(true);
-
-    // Controls
-    QHBoxLayout *controlLayout = new QHBoxLayout;
-    controlLayout->addWidget(new QLabel("adress:"));
-
-    m_addressInput = new QLineEdit;
-    m_addressInput->setPlaceholderText("0x8000");
-    controlLayout->addWidget(m_addressInput);
-
-    m_gotoButton = new QPushButton("Go to");
-    controlLayout->addWidget(m_gotoButton);
-
-    m_refreshButton = new QPushButton("Refresh");
-    controlLayout->addWidget(m_refreshButton);
-
-    controlLayout->addStretch();
-
-    // Layout
-    QVBoxLayout *layout = new QVBoxLayout;
-    layout->addLayout(controlLayout);
-    layout->addWidget(m_memoryTable);
-
-    m_memoryGroup->setLayout(layout);
-
-    // Connect signals
-    connect(m_refreshButton, &QPushButton::clicked, this, &CheatEngine::onMemoryRefresh);
-    connect(m_memoryTable, &QTableWidget::itemSelectionChanged, this, &CheatEngine::onMemoryTableSelectionChanged);
-}
-
-void CheatEngine::setupSearchPanel()
-{
-    m_searchGroup = new QGroupBox("Memory Search");
-
-    QGridLayout *layout = new QGridLayout;
-
-    //value
-    layout->addWidget(new QLabel("Value:"), 0, 0);
-    m_searchValue = new QLineEdit;
-    m_searchValue->setPlaceholderText("255");
-    layout->addWidget(m_searchValue, 0, 1);
-
-    //type
-    layout->addWidget(new QLabel("Type:"), 1, 0);
-    m_searchType = new QComboBox;
-    m_searchType->addItems({"Byte (8-bit)", "Word (16-bit)", "Text"});
-    layout->addWidget(m_searchType, 1, 1);
-
-    // Compare type
-    layout->addWidget(new QLabel("Compare:"), 2, 0);
-    m_compareType = new QComboBox;
-    m_compareType->addItems({"Equal", "Greater", "Less", "Changed", "Unchanged"});
-    layout->addWidget(m_compareType, 2, 1);
-
-    // Buttons
-    QHBoxLayout *buttonLayout = new QHBoxLayout;
-    m_searchButton = new QPushButton("First Scan");
-    m_nextScanButton = new QPushButton("Next Scan");
-    m_resetButton = new QPushButton("Reset");
-
-    buttonLayout->addWidget(m_searchButton);
-    buttonLayout->addWidget(m_nextScanButton);
-    buttonLayout->addWidget(m_resetButton);
-
-    layout->addLayout(buttonLayout, 3, 0, 1, 2);
-
-    // Results label
-    m_resultsLabel = new QLabel("Results: 0");
-    layout->addWidget(m_resultsLabel, 4, 0, 1, 2);
-
-    m_searchGroup->setLayout(layout);
-
-    // Connect signals
-    connect(m_searchButton, &QPushButton::clicked, this, &CheatEngine::onSearchMemory);
-    connect(m_nextScanButton, &QPushButton::clicked, this, &CheatEngine::onSearchMemory);
-    connect(m_resetButton, &QPushButton::clicked, [this]() {
-        m_searchResults.clear();
-        m_resultsLabel->setText("Results: 0");
-        m_logOutput->append("Scan reset");
-    });
+    m_mainSplitter->setSizes({400, 150});
 }
 
 void CheatEngine::setupCheatManager()
@@ -175,7 +88,7 @@ void CheatEngine::setupCheatManager()
 
     // Cheat table
     m_cheatTable = new QTableWidget(0, 5);
-    QStringList headers = {"Actice", "Adress", "Value", "Description", "Freezed"};
+    QStringList headers = {"Active", "Address", "Value", "Description", "Frozen"};
     m_cheatTable->setHorizontalHeaderLabels(headers);
     m_cheatTable->horizontalHeader()->setStretchLastSection(true);
     m_cheatTable->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -185,11 +98,11 @@ void CheatEngine::setupCheatManager()
     QHBoxLayout *buttonLayout = new QHBoxLayout;
     m_addCheatButton = new QPushButton("Add");
     m_removeCheatButton = new QPushButton("Delete");
-    m_toggleFreezeButton = new QPushButton("Freeze Toggle");
+    m_importMapButton = new QPushButton("Import Map");
 
     buttonLayout->addWidget(m_addCheatButton);
     buttonLayout->addWidget(m_removeCheatButton);
-    buttonLayout->addWidget(m_toggleFreezeButton);
+    buttonLayout->addWidget(m_importMapButton);
     buttonLayout->addStretch();
 
     // Cheat editor group
@@ -231,31 +144,8 @@ void CheatEngine::setupCheatManager()
     // Connect signals
     connect(m_addCheatButton, &QPushButton::clicked, this, &CheatEngine::onAddCheat);
     connect(m_removeCheatButton, &QPushButton::clicked, this, &CheatEngine::onRemoveCheat);
-    connect(m_toggleFreezeButton, &QPushButton::clicked, this, &CheatEngine::onToggleFreeze);
+    connect(m_importMapButton, &QPushButton::clicked, this, &CheatEngine::onImportMap);
     connect(m_cheatTable, &QTableWidget::itemSelectionChanged, this, &CheatEngine::onCheatTableSelectionChanged);
-}
-
-void CheatEngine::onSearchMemory()
-{
-    QString value = m_searchValue->text();
-    QString type = m_searchType->currentText();
-    QString compare = m_compareType->currentText();
-
-    if (value.isEmpty()) {
-        m_logOutput->append("Error: Entered no search value");
-        return;
-    }
-
-    // Simulate memory search
-    m_searchResults.clear();
-
-    // some dummy results
-    for (int i = 0; i < 10; i++) {
-        m_searchResults.append(QString("0x%1").arg(0x8000 + i * 4, 4, 16, QChar('0')));
-    }
-
-    m_resultsLabel->setText(QString("Results: %1").arg(m_searchResults.count()));
-    m_logOutput->append(QString("Search for '%1' (%2, %3): %4 results").arg(value, type, compare).arg(m_searchResults.count()));
 }
 
 void CheatEngine::onAddCheat()
@@ -278,6 +168,11 @@ void CheatEngine::onAddCheat()
     cheat.type = type;
     cheat.frozen = frozen;
     cheat.enabled = true;
+    cheat.cheatSet = nullptr;
+
+    if (cheat.enabled) {
+        applyCheat(cheat);
+    }
 
     m_cheats.append(cheat);
     updateCheatTable();
@@ -295,27 +190,107 @@ void CheatEngine::onRemoveCheat()
 {
     int row = m_cheatTable->currentRow();
     if (row >= 0 && row < m_cheats.count()) {
-        CheatEntry cheat = m_cheats.at(row);
+        CheatEntry& cheat = m_cheats[row];
+        
+        removeCheat(cheat);
+        
+        m_logOutput->append(QString("Cheat deleted: %1").arg(cheat.description));
         m_cheats.removeAt(row);
         updateCheatTable();
-        m_logOutput->append(QString("Cheat deleted: %1").arg(cheat.description));
     }
 }
 
-void CheatEngine::onToggleFreeze()
+void CheatEngine::onImportMap()
 {
-    int row = m_cheatTable->currentRow();
-    if (row >= 0 && row < m_cheats.count()) {
-        m_cheats[row].frozen = !m_cheats[row].frozen;
-        updateCheatTable();
-        m_logOutput->append(QString("Freeze-Status changed: %1").arg(m_cheats[row].description));
+    QString fileName = QFileDialog::getOpenFileName(this,
+        "Import Cheat Map", "", "mGBA Table Files (*.mgbatable);;All Files (*)");
+    
+    if (fileName.isEmpty()) {
+        return;
     }
-}
 
-void CheatEngine::onMemoryRefresh()
-{
-    updateMemoryTable();
-    m_statusLabel->setText(QString("Last refresh: %1").arg(QTime::currentTime().toString()));
+    QFile file(fileName);
+    if (!file.open(QIODevice::ReadOnly)) {
+        QMessageBox::warning(this, "Error", "Could not open file: " + fileName);
+        return;
+    }
+
+    QByteArray data = file.readAll();
+    file.close();
+
+    QJsonParseError error;
+    QJsonDocument doc = QJsonDocument::fromJson(data, &error);
+    
+    if (error.error != QJsonParseError::NoError) {
+        QMessageBox::warning(this, "Parse Error", 
+            QString("JSON parse error: %1").arg(error.errorString()));
+        return;
+    }
+
+    if (!doc.isObject()) {
+        QMessageBox::warning(this, "Format Error", "File must contain a JSON object");
+        return;
+    }
+
+    QJsonObject root = doc.object();
+    
+    QString gameName = root.value("game").toString("Unknown Game");
+    QString version = root.value("version").toString("1.0");
+    QString author = root.value("author").toString("Unknown");
+    
+    m_logOutput->append(QString("Importing cheats for: %1 (v%2) by %3")
+                       .arg(gameName, version, author));
+
+    QJsonArray cheatsArray = root.value("cheats").toArray();
+    int importedCount = 0;
+    
+    for (const QJsonValue& cheatValue : cheatsArray) {
+        if (!cheatValue.isObject()) {
+            continue;
+        }
+        
+        QJsonObject cheatObj = cheatValue.toObject();
+        
+        QString address = cheatObj.value("address").toString();
+        QString value = cheatObj.value("value").toString();
+        QString description = cheatObj.value("description").toString();
+        QString type = cheatObj.value("type").toString("Byte");
+        bool frozen = cheatObj.value("frozen").toBool(false);
+        bool enabled = cheatObj.value("enabled").toBool(true);
+        
+        if (address.isEmpty() || value.isEmpty()) {
+            m_logOutput->append("Skipping invalid cheat entry (missing address or value)");
+            continue;
+        }
+        
+        CheatEntry cheat;
+        cheat.address = address;
+        cheat.value = value;
+        cheat.description = description.isEmpty() ? "Imported Cheat" : description;
+        cheat.type = type;
+        cheat.frozen = frozen;
+        cheat.enabled = enabled;
+        cheat.cheatSet = nullptr;
+        
+        if (cheat.enabled) {
+            applyCheat(cheat);
+        }
+        
+        m_cheats.append(cheat);
+        importedCount++;
+    }
+    
+    updateCheatTable();
+    
+    m_logOutput->append(QString("Successfully imported %1 cheats from %2")
+                       .arg(importedCount).arg(QFileInfo(fileName).fileName()));
+    
+    if (importedCount > 0) {
+        QMessageBox::information(this, "Import Complete", 
+            QString("Successfully imported %1 cheats!").arg(importedCount));
+    } else {
+        QMessageBox::warning(this, "Import Warning", "No valid cheats found in file");
+    }
 }
 
 void CheatEngine::onValueChanged()
@@ -336,71 +311,290 @@ void CheatEngine::onCheatTableSelectionChanged()
     }
 }
 
-void CheatEngine::onMemoryTableSelectionChanged()
-{
-    int row = m_memoryTable->currentRow();
-    if (row >= 0 && row < m_memoryEntries.count()) {
-        MemoryEntry entry = m_memoryEntries.at(row);
-        m_cheatAddress->setText(entry.address);
-        m_cheatValue->setText(entry.value);
-    }
-}
-
-void CheatEngine::updateMemoryTable()
-{
-    // Simulate memory data
-    m_memoryEntries.clear();
-
-    for (int i = 0; i < 50; i++) {
-        MemoryEntry entry;
-        entry.address = QString("0x%1").arg(0x8000 + i, 4, 16, QChar('0'));
-        entry.value = QString("0x%1").arg(QRandomGenerator::global()->bounded(256), 2, 16, QChar('0'));
-        entry.oldValue = QString("0x%1").arg(QRandomGenerator::global()->bounded(256), 2, 16, QChar('0'));
-        entry.changed = (QRandomGenerator::global()->bounded(10)) == 0;
-        m_memoryEntries.append(entry);
-    }
-
-    m_memoryTable->setRowCount(m_memoryEntries.count());
-
-    for (int i = 0; i < m_memoryEntries.count(); i++) {
-        MemoryEntry entry = m_memoryEntries.at(i);
-
-        m_memoryTable->setItem(i, 0, new QTableWidgetItem(entry.address));
-        m_memoryTable->setItem(i, 1, new QTableWidgetItem(entry.value));
-        m_memoryTable->setItem(i, 2, new QTableWidgetItem(entry.oldValue));
-        m_memoryTable->setItem(i, 3, new QTableWidgetItem("Byte"));
-
-        if (entry.changed) {
-            for (int j = 0; j < 4; j++) {
-                m_memoryTable->item(i, j)->setBackground(QColor(255, 255, 200));
-            }
-        }
-    }
-}
-
 void CheatEngine::updateCheatTable()
 {
     m_cheatTable->setRowCount(m_cheats.count());
 
     for (int i = 0; i < m_cheats.count(); i++) {
-        CheatEntry cheat = m_cheats.at(i);
+        CheatEntry& cheat = m_cheats[i];
 
         QCheckBox *enabledBox = new QCheckBox;
         enabledBox->setChecked(cheat.enabled);
+        
+        connect(enabledBox, &QCheckBox::toggled, [this, i](bool checked) {
+            if (i < m_cheats.count()) {
+                CheatEntry& cheat = m_cheats[i];
+                cheat.enabled = checked;
+                
+                if (checked) {
+                    if (!cheat.cheatSet) {
+                        applyCheat(cheat);
+                    }
+                    m_logOutput->append(QString("Activated cheat: %1").arg(cheat.description));
+                } else {
+                    if (cheat.cheatSet) {
+                        removeCheat(cheat);
+                    }
+                    m_logOutput->append(QString("Deactivated cheat: %1").arg(cheat.description));
+                }
+            }
+        });
+        
         m_cheatTable->setCellWidget(i, 0, enabledBox);
 
-        m_cheatTable->setItem(i, 1, new QTableWidgetItem(cheat.address));
-        m_cheatTable->setItem(i, 2, new QTableWidgetItem(cheat.value));
-        m_cheatTable->setItem(i, 3, new QTableWidgetItem(cheat.description));
+        // Address column - READ ONLY
+        QTableWidgetItem *addressItem = new QTableWidgetItem(cheat.address);
+        addressItem->setFlags(addressItem->flags() & ~Qt::ItemIsEditable);
+        addressItem->setBackground(QColor(240, 240, 240));
+        m_cheatTable->setItem(i, 1, addressItem);
+
+        QTableWidgetItem *valueItem = new QTableWidgetItem(cheat.value);
+        m_cheatTable->setItem(i, 2, valueItem);
+        
+        connect(m_cheatTable, &QTableWidget::itemChanged, [this, i](QTableWidgetItem* item) {
+            if (item->column() == 2 && i < m_cheats.count()) {
+                CheatEntry& cheat = m_cheats[i];
+                QString newValue = item->text();
+                
+                cheat.value = newValue;
+            
+                if (cheat.enabled && cheat.cheatSet) {
+                    removeCheat(cheat);
+                    applyCheat(cheat);
+                }
+                
+                m_logOutput->append(QString("Updated cheat value: %1 = %2").arg(cheat.address, newValue));
+            }
+        });
+
+        QTableWidgetItem *descItem = new QTableWidgetItem(cheat.description);
+        m_cheatTable->setItem(i, 3, descItem);
+        
+        connect(m_cheatTable, &QTableWidget::itemChanged, [this, i](QTableWidgetItem* item) {
+            if (item->column() == 3 && i < m_cheats.count()) { // Description column
+                CheatEntry& cheat = m_cheats[i];
+                cheat.description = item->text();
+                m_logOutput->append(QString("Updated cheat description: %1").arg(cheat.description));
+            }
+        });
 
         QCheckBox *frozenBox = new QCheckBox;
         frozenBox->setChecked(cheat.frozen);
+        
+        connect(frozenBox, &QCheckBox::toggled, [this, i](bool checked) {
+            if (i < m_cheats.count()) {
+                CheatEntry& cheat = m_cheats[i];
+                cheat.frozen = checked;
+                
+                if (checked) {
+                    freezeCheat(cheat);
+                } else {
+                    unfreezeCheat(cheat);
+                }
+                
+                updateCheatTable();
+            }
+        });
+        
         m_cheatTable->setCellWidget(i, 4, frozenBox);
 
         if (cheat.frozen) {
             for (int j = 1; j < 4; j++) {
-                m_cheatTable->item(i, j)->setBackground(QColor(200, 200, 255));
+                if (j != 1) { // Don't override address column background
+                    m_cheatTable->item(i, j)->setBackground(QColor(200, 200, 255));
+                }
+            }
+        }
+        
+        // Visual indication for inactive cheats
+        if (!cheat.enabled) {
+            for (int j = 1; j < 4; j++) {
+                if (j == 1) continue; // Don't override address column background
+                m_cheatTable->item(i, j)->setBackground(QColor(220, 220, 220));
             }
         }
     }
+}
+
+void CheatEngine::initCheatDevice()
+{
+    if (!m_controller || !m_controller->thread()) {
+        m_logOutput->append("Error: No active core controller");
+        return;
+    }
+
+    // Get the mGBA core
+    mCore* core = m_controller->thread()->core;
+    if (!core) {
+        m_logOutput->append("Error: No active core");
+        return;
+    }
+
+    // Get the cheat device from the core
+    m_cheatDevice = core->cheatDevice(core);
+    if (!m_cheatDevice) {
+        m_logOutput->append("Error: Core does not support cheats");
+        return;
+    }
+
+    m_logOutput->append("Cheat device initialized successfully");
+}
+
+void CheatEngine::applyCheat(CheatEntry& cheat)
+{
+    if (!m_cheatDevice || !m_controller || !m_controller->thread()) {
+        m_logOutput->append("Error: Cheat device not available");
+        return;
+    }
+
+    mCore* core = m_controller->thread()->core;
+    if (!core) {
+        m_logOutput->append("Error: No active core");
+        return;
+    }
+
+    // Parse address and value
+    uint32_t address = parseAddress(cheat.address);
+    int32_t value = parseValue(cheat.value, cheat.type);
+    int width = getWidthFromType(cheat.type);
+
+    if (address == 0 && cheat.address != "0x0" && cheat.address != "0") {
+        m_logOutput->append(QString("Error: Invalid address: %1").arg(cheat.address));
+        return;
+    }
+
+    // Create a cheat set for this cheat
+    cheat.cheatSet = m_cheatDevice->createSet(m_cheatDevice, cheat.description.toUtf8().constData());
+    if (!cheat.cheatSet) {
+        m_logOutput->append("Error: Failed to create cheat set");
+        return;
+    }
+
+    // Create cheat line in the format "ADDRESS:VALUE"
+    QString cheatLine = QString("%1:%2").arg(address, 8, 16, QChar('0')).arg(value, width*2, 16, QChar('0'));
+    
+    // Add the cheat line to the set
+    if (!mCheatAddLine(cheat.cheatSet, cheatLine.toUtf8().constData(), 0)) {
+        m_logOutput->append("Error: Failed to add cheat line");
+        return;
+    }
+
+    // Add the cheat set to the device
+    mCheatAddSet(m_cheatDevice, cheat.cheatSet);
+    
+    // Refresh the cheat to apply it
+    mCheatRefresh(m_cheatDevice, cheat.cheatSet);
+
+    m_logOutput->append(QString("Applied cheat: %1 = %2").arg(cheat.address, cheat.value));
+}
+
+void CheatEngine::removeCheat(CheatEntry& cheat)
+{
+    if (!m_cheatDevice || !cheat.cheatSet) {
+        return;
+    }
+
+    // Remove the cheat set from the device
+    mCheatRemoveSet(m_cheatDevice, cheat.cheatSet);
+    
+    // The cheat set will be freed by mGBA's cheat system
+    cheat.cheatSet = nullptr;
+
+    m_logOutput->append(QString("Removed cheat: %1").arg(cheat.description));
+}
+
+void CheatEngine::freezeCheat(CheatEntry& cheat)
+{
+    // For freezing, we'll use the timer to continuously write the value
+    // The actual freeze functionality is handled in onFreezeTimer()
+    m_logOutput->append(QString("Freezing cheat: %1").arg(cheat.description));
+}
+
+void CheatEngine::unfreezeCheat(CheatEntry& cheat)
+{
+    m_logOutput->append(QString("Unfreezing cheat: %1").arg(cheat.description));
+}
+
+void CheatEngine::onFreezeTimer()
+{
+    if (!m_controller || !m_controller->thread()) {
+        return;
+    }
+
+    mCore* core = m_controller->thread()->core;
+    if (!core) {
+        return;
+    }
+
+    // Write frozen values to memory multiple times per frame for better "stickiness"
+    for (const auto& cheat : m_cheats) {
+        if (cheat.frozen && cheat.enabled) {
+            uint32_t address = parseAddress(cheat.address);
+            int32_t value = parseValue(cheat.value, cheat.type);
+            int width = getWidthFromType(cheat.type);
+
+            if (address != 0 || cheat.address == "0x0" || cheat.address == "0") {
+                // Write the value directly to memory multiple times for aggressive freezing
+                for (int writes = 0; writes < 3; ++writes) {
+                    switch (width) {
+                    case 1:
+                        core->busWrite8(core, address, value);
+                        break;
+                    case 2:
+                        core->busWrite16(core, address, value);
+                        break;
+                    case 4:
+                        core->busWrite32(core, address, value);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
+int CheatEngine::getWidthFromType(const QString& type)
+{
+    if (type == "Byte") {
+        return 1;
+    } else if (type == "Word") {
+        return 2;
+    }
+    return 1; // Default to byte
+}
+
+uint32_t CheatEngine::parseAddress(const QString& address)
+{
+    bool ok;
+    uint32_t addr = address.toUInt(&ok, 16);
+    if (!ok) {
+        // Try without 0x prefix
+        addr = address.mid(2).toUInt(&ok, 16);
+    }
+    return ok ? addr : 0;
+}
+
+int32_t CheatEngine::parseValue(const QString& value, const QString& type)
+{
+    bool ok;
+    int32_t val;
+    
+    if (value.startsWith("0x", Qt::CaseInsensitive)) {
+        val = value.toInt(&ok, 16);
+    } else {
+        val = value.toInt(&ok, 10);
+    }
+    
+    if (!ok) {
+        return 0;
+    }
+    
+    // Clamp value based on type
+    if (type == "Byte") {
+        return val & 0xFF;
+    } else if (type == "Word") {
+        return val & 0xFFFF;
+    }
+    
+    return val;
 }
