@@ -32,25 +32,13 @@ This repository includes a sample cheat map for **Super Mario Land** (Game Boy) 
 3. Either manually add cheats or import a `.mgbatable` file
 4. Toggle cheats active/inactive and freeze values as needed
 
-## ⚖️ Legal Notice
+## Legal Notice
 
 **IMPORTANT**: This emulator is intended for use with legally obtained ROM files only. You must own the original game cartridge to legally use ROM files. The developers do not condone or support piracy in any form.
 
 The included cheat maps are provided for educational and legitimate use purposes only, for games that you legally own.
 
-## 🛠️ Building the Project
-
-### Prerequisites
-
-**Windows (using Docker - Recommended):**
-- Docker Desktop
-- Git
-
-**Manual Build Requirements:**
-- CMake 3.15+
-- Qt 5.15+ or Qt 6.x
-- C++17 compatible compiler
-- Required libraries: zlib, libpng, SDL2
+## Building the Project
 
 ### Building with Docker
 
