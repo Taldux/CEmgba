@@ -18,7 +18,7 @@
 #include <QtWidgets/QSplitter>
 #include <QtWidgets/QHeaderView>
 #include <QtCore/QDebug>
-#include <QtCore/QTimer>
+#include <QtCore/QMap>
 #include "CoreController.h"
 
 extern "C" {
@@ -42,7 +42,6 @@ private slots:
     void onImportMap();
     void onValueChanged();
     void onCheatTableSelectionChanged();
-    void onFreezeTimer();
 
 private:
     void setupUI();
@@ -92,13 +91,27 @@ private:
     void removeCheat(CheatEntry& cheat);
     void freezeCheat(CheatEntry& cheat);
     void unfreezeCheat(CheatEntry& cheat);
+    void directMemoryFreeze(const CheatEntry& cheat);
+
+    void setupFrameCallback();
+    void removeFrameCallback();
+    static void coreFrameCallback(void* context);
+    void onFrameComplete();
+
+    struct mCoreCallbacks m_coreCallbacks;
+
+    struct FreezeStats {
+        uint32_t changeCount = 0;
+        uint32_t lastChangeFrame = 0;
+        int32_t lastKnownValue = 0;
+        bool isStable = true;
+    };
+    QMap<QString, FreezeStats> m_freezeStats;
 
     QList<CheatEntry> m_cheats;
     std::shared_ptr<QGBA::CoreController> m_controller;
     
-    // mGBA cheat system integration
     struct mCheatDevice* m_cheatDevice;
-    QTimer* m_freezeTimer;
 
 };
 

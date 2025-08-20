@@ -4,7 +4,6 @@
 #include <QtWidgets/QFileDialog>
 #include <QtWidgets/QMessageBox>
 #include <QtCore/QRandomGenerator>
-#include <QtCore/QTimer>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonArray>
@@ -24,19 +23,16 @@ CheatEngine::CheatEngine(std::shared_ptr<CoreController> controller, QWidget *pa
     , m_centralWidget(nullptr)
     , m_controller(std::move(controller))
     , m_cheatDevice(nullptr)
-    , m_freezeTimer(new QTimer(this))
 {
     setupUI();
     initCheatDevice();
 
-    m_freezeTimer->setInterval(16); // Update every ~16ms (60 FPS)
-    connect(m_freezeTimer, &QTimer::timeout, this, &CheatEngine::onFreezeTimer);
-    m_freezeTimer->start();
-
+    setupFrameCallback();
     updateCheatTable();
 }
 CheatEngine::~CheatEngine()
 {
+    removeFrameCallback();
     for (auto& cheat : m_cheats) {
         if (cheat.cheatSet) {
             removeCheat(cheat);
@@ -52,33 +48,26 @@ void CheatEngine::setupUI()
     m_centralWidget = new QWidget;
     setCentralWidget(m_centralWidget);
 
-    // Main splitter for vertical layout
     m_mainSplitter = new QSplitter(Qt::Vertical);
-
     setupCheatManager();
 
-    // Add panels to splitter
     m_mainSplitter->addWidget(m_cheatGroup);
     m_mainSplitter->addWidget(m_editorGroup);
 
-    // Setup log output
     m_logOutput = new QTextEdit;
     m_logOutput->setMaximumHeight(100);
     m_logOutput->setReadOnly(true);
     m_logOutput->append("Cheat Engine started...");
 
-    // Status label
     m_statusLabel = new QLabel("Ready");
     statusBar()->addWidget(m_statusLabel);
 
-    // Main layout
     QVBoxLayout *mainLayout = new QVBoxLayout;
     mainLayout->addWidget(m_mainSplitter);
     mainLayout->addWidget(m_logOutput);
 
     m_centralWidget->setLayout(mainLayout);
 
-    // Set splitter proportions
     m_mainSplitter->setSizes({400, 150});
 }
 
@@ -86,7 +75,6 @@ void CheatEngine::setupCheatManager()
 {
     m_cheatGroup = new QGroupBox("Cheat Manager");
 
-    // Cheat table
     m_cheatTable = new QTableWidget(0, 5);
     QStringList headers = {"Active", "Address", "Value", "Description", "Frozen"};
     m_cheatTable->setHorizontalHeaderLabels(headers);
@@ -94,7 +82,6 @@ void CheatEngine::setupCheatManager()
     m_cheatTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_cheatTable->setAlternatingRowColors(true);
 
-    // Buttons
     QHBoxLayout *buttonLayout = new QHBoxLayout;
     m_addCheatButton = new QPushButton("Add");
     m_removeCheatButton = new QPushButton("Delete");
@@ -105,7 +92,6 @@ void CheatEngine::setupCheatManager()
     buttonLayout->addWidget(m_importMapButton);
     buttonLayout->addStretch();
 
-    // Cheat editor group
     m_editorGroup = new QGroupBox("Cheat Editor");
     QGridLayout *editorLayout = new QGridLayout;
 
@@ -134,14 +120,12 @@ void CheatEngine::setupCheatManager()
 
     m_editorGroup->setLayout(editorLayout);
 
-    // Layout
     QVBoxLayout *layout = new QVBoxLayout;
     layout->addWidget(m_cheatTable);
     layout->addLayout(buttonLayout);
 
     m_cheatGroup->setLayout(layout);
 
-    // Connect signals
     connect(m_addCheatButton, &QPushButton::clicked, this, &CheatEngine::onAddCheat);
     connect(m_removeCheatButton, &QPushButton::clicked, this, &CheatEngine::onRemoveCheat);
     connect(m_importMapButton, &QPushButton::clicked, this, &CheatEngine::onImportMap);
@@ -179,7 +163,6 @@ void CheatEngine::onAddCheat()
 
     m_logOutput->append(QString("Cheat added: %1 = %2").arg(address, value));
 
-    // Clear editor
     m_cheatAddress->clear();
     m_cheatValue->clear();
     m_cheatDescription->clear();
@@ -293,11 +276,6 @@ void CheatEngine::onImportMap()
     }
 }
 
-void CheatEngine::onValueChanged()
-{
-    // Handle value changes in tables
-}
-
 void CheatEngine::onCheatTableSelectionChanged()
 {
     int row = m_cheatTable->currentRow();
@@ -342,7 +320,6 @@ void CheatEngine::updateCheatTable()
         
         m_cheatTable->setCellWidget(i, 0, enabledBox);
 
-        // Address column - READ ONLY
         QTableWidgetItem *addressItem = new QTableWidgetItem(cheat.address);
         addressItem->setFlags(addressItem->flags() & ~Qt::ItemIsEditable);
         addressItem->setBackground(QColor(240, 240, 240));
@@ -400,16 +377,15 @@ void CheatEngine::updateCheatTable()
 
         if (cheat.frozen) {
             for (int j = 1; j < 4; j++) {
-                if (j != 1) { // Don't override address column background
+                if (j != 1) {
                     m_cheatTable->item(i, j)->setBackground(QColor(200, 200, 255));
                 }
             }
         }
         
-        // Visual indication for inactive cheats
         if (!cheat.enabled) {
             for (int j = 1; j < 4; j++) {
-                if (j == 1) continue; // Don't override address column background
+                if (j == 1) continue;
                 m_cheatTable->item(i, j)->setBackground(QColor(220, 220, 220));
             }
         }
@@ -423,14 +399,12 @@ void CheatEngine::initCheatDevice()
         return;
     }
 
-    // Get the mGBA core
     mCore* core = m_controller->thread()->core;
     if (!core) {
         m_logOutput->append("Error: No active core");
         return;
     }
 
-    // Get the cheat device from the core
     m_cheatDevice = core->cheatDevice(core);
     if (!m_cheatDevice) {
         m_logOutput->append("Error: Core does not support cheats");
@@ -453,7 +427,6 @@ void CheatEngine::applyCheat(CheatEntry& cheat)
         return;
     }
 
-    // Parse address and value
     uint32_t address = parseAddress(cheat.address);
     int32_t value = parseValue(cheat.value, cheat.type);
     int width = getWidthFromType(cheat.type);
@@ -463,28 +436,21 @@ void CheatEngine::applyCheat(CheatEntry& cheat)
         return;
     }
 
-    // Create a cheat set for this cheat
     cheat.cheatSet = m_cheatDevice->createSet(m_cheatDevice, cheat.description.toUtf8().constData());
     if (!cheat.cheatSet) {
         m_logOutput->append("Error: Failed to create cheat set");
         return;
     }
 
-    // Create cheat line in the format "ADDRESS:VALUE"
     QString cheatLine = QString("%1:%2").arg(address, 8, 16, QChar('0')).arg(value, width*2, 16, QChar('0'));
     
-    // Add the cheat line to the set
     if (!mCheatAddLine(cheat.cheatSet, cheatLine.toUtf8().constData(), 0)) {
         m_logOutput->append("Error: Failed to add cheat line");
         return;
     }
 
-    // Add the cheat set to the device
     mCheatAddSet(m_cheatDevice, cheat.cheatSet);
-    
-    // Refresh the cheat to apply it
     mCheatRefresh(m_cheatDevice, cheat.cheatSet);
-
     m_logOutput->append(QString("Applied cheat: %1 = %2").arg(cheat.address, cheat.value));
 }
 
@@ -494,10 +460,7 @@ void CheatEngine::removeCheat(CheatEntry& cheat)
         return;
     }
 
-    // Remove the cheat set from the device
     mCheatRemoveSet(m_cheatDevice, cheat.cheatSet);
-    
-    // The cheat set will be freed by mGBA's cheat system
     cheat.cheatSet = nullptr;
 
     m_logOutput->append(QString("Removed cheat: %1").arg(cheat.description));
@@ -505,8 +468,6 @@ void CheatEngine::removeCheat(CheatEntry& cheat)
 
 void CheatEngine::freezeCheat(CheatEntry& cheat)
 {
-    // For freezing, we'll use the timer to continuously write the value
-    // The actual freeze functionality is handled in onFreezeTimer()
     m_logOutput->append(QString("Freezing cheat: %1").arg(cheat.description));
 }
 
@@ -515,7 +476,7 @@ void CheatEngine::unfreezeCheat(CheatEntry& cheat)
     m_logOutput->append(QString("Unfreezing cheat: %1").arg(cheat.description));
 }
 
-void CheatEngine::onFreezeTimer()
+void CheatEngine::directMemoryFreeze(const CheatEntry& cheat)
 {
     if (!m_controller || !m_controller->thread()) {
         return;
@@ -526,29 +487,140 @@ void CheatEngine::onFreezeTimer()
         return;
     }
 
-    // Write frozen values to memory multiple times per frame for better "stickiness"
+    uint32_t address = parseAddress(cheat.address);
+    int32_t targetValue = parseValue(cheat.value, cheat.type);
+    int width = getWidthFromType(cheat.type);
+
+    if (address == 0 && cheat.address != "0x0" && cheat.address != "0") {
+        return;
+    }
+
+    int32_t currentValue = 0;
+    switch (width) {
+    case 1:
+        currentValue = core->busRead8(core, address);
+        break;
+    case 2:
+        currentValue = core->busRead16(core, address);
+        break;
+    case 4:
+        currentValue = core->busRead32(core, address);
+        break;
+    }
+
+    if (currentValue != targetValue) {
+        FreezeStats& stats = m_freezeStats[cheat.address];
+        uint32_t currentFrame = core->frameCounter(core);
+        
+        stats.changeCount++;
+        stats.lastChangeFrame = currentFrame;
+        
+        const struct mCoreMemoryBlock* block = mCoreGetMemoryBlockInfo(core, address);
+        
+        if (block && (block->flags & mCORE_MEMORY_WRITE)) {
+            switch (width) {
+            case 1:
+                core->rawWrite8(core, address, block->id, targetValue);
+                break;
+            case 2:
+                core->rawWrite16(core, address, block->id, targetValue);
+                break;
+            case 4:
+                core->rawWrite32(core, address, block->id, targetValue);
+                break;
+            }
+        }
+        
+        switch (width) {
+        case 1:
+            core->busWrite8(core, address, targetValue);
+            break;
+        case 2:
+            core->busWrite16(core, address, targetValue);
+            break;
+        case 4:
+            core->busWrite32(core, address, targetValue);
+            break;
+        }
+
+        if ((currentFrame - stats.lastChangeFrame) > 60 || stats.changeCount == 1) {
+            m_logOutput->append(QString("Frame-sync freeze: %1 (%2 -> %3)")
+                               .arg(cheat.address)
+                               .arg(currentValue)
+                               .arg(targetValue));
+        }
+        
+        stats.lastKnownValue = targetValue;
+    }
+}
+
+void CheatEngine::onValueChanged(){
+    
+}
+
+void CheatEngine::setupFrameCallback()
+{
+    if (!m_controller || !m_controller->thread()) {
+        m_logOutput->append("Error: Cannot setup frame callback - no core controller");
+        return;
+    }
+
+    mCore* core = m_controller->thread()->core;
+    if (!core) {
+        m_logOutput->append("Error: Cannot setup frame callback - no core");
+        return;
+    }
+
+    m_coreCallbacks.videoFrameStarted = nullptr;
+    m_coreCallbacks.videoFrameEnded = &CheatEngine::coreFrameCallback;
+    m_coreCallbacks.coreCrashed = nullptr;
+    m_coreCallbacks.sleep = nullptr;
+    m_coreCallbacks.shutdown = nullptr;
+    m_coreCallbacks.keysRead = nullptr;
+    m_coreCallbacks.savedataUpdated = nullptr;
+    m_coreCallbacks.alarm = nullptr;
+    m_coreCallbacks.context = this;
+
+    core->addCoreCallbacks(core, &m_coreCallbacks);
+    m_logOutput->append("Frame callback registered - freeze system will sync with game frames");
+}
+
+void CheatEngine::removeFrameCallback()
+{
+    if (!m_controller || !m_controller->thread()) {
+        return;
+    }
+
+    mCore* core = m_controller->thread()->core;
+    if (!core) {
+        return;
+    }
+
+    core->clearCoreCallbacks(core);
+}
+
+void CheatEngine::coreFrameCallback(void* context)
+{
+    CheatEngine* engine = static_cast<CheatEngine*>(context);
+    if (engine) {
+        engine->onFrameComplete();
+    }
+}
+
+void CheatEngine::onFrameComplete()
+{
+    if (!m_controller || !m_controller->thread()) {
+        return;
+    }
+
+    mCore* core = m_controller->thread()->core;
+    if (!core) {
+        return;
+    }
+
     for (const auto& cheat : m_cheats) {
         if (cheat.frozen && cheat.enabled) {
-            uint32_t address = parseAddress(cheat.address);
-            int32_t value = parseValue(cheat.value, cheat.type);
-            int width = getWidthFromType(cheat.type);
-
-            if (address != 0 || cheat.address == "0x0" || cheat.address == "0") {
-                // Write the value directly to memory multiple times for aggressive freezing
-                for (int writes = 0; writes < 3; ++writes) {
-                    switch (width) {
-                    case 1:
-                        core->busWrite8(core, address, value);
-                        break;
-                    case 2:
-                        core->busWrite16(core, address, value);
-                        break;
-                    case 4:
-                        core->busWrite32(core, address, value);
-                        break;
-                    }
-                }
-            }
+            directMemoryFreeze(cheat);
         }
     }
 }
@@ -560,7 +632,7 @@ int CheatEngine::getWidthFromType(const QString& type)
     } else if (type == "Word") {
         return 2;
     }
-    return 1; // Default to byte
+    return 1;
 }
 
 uint32_t CheatEngine::parseAddress(const QString& address)
@@ -589,7 +661,6 @@ int32_t CheatEngine::parseValue(const QString& value, const QString& type)
         return 0;
     }
     
-    // Clamp value based on type
     if (type == "Byte") {
         return val & 0xFF;
     } else if (type == "Word") {
