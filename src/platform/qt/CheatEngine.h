@@ -17,6 +17,7 @@
 #include <QtWidgets/QTextEdit>
 #include <QtWidgets/QSplitter>
 #include <QtWidgets/QHeaderView>
+#include <QtWidgets/QShortcut>
 #include <QtCore/QDebug>
 #include <QtCore/QMap>
 #include "CoreController.h"
@@ -42,6 +43,8 @@ private slots:
     void onImportMap();
     void onValueChanged();
     void onCheatTableSelectionChanged();
+    void toggleAllCheats();
+    void setupHotkeys();
 
 private:
     void setupUI();

@@ -26,7 +26,7 @@ CheatEngine::CheatEngine(std::shared_ptr<CoreController> controller, QWidget *pa
 {
     setupUI();
     initCheatDevice();
-
+    setupHotkeys();
     setupFrameCallback();
     updateCheatTable();
 }
@@ -660,7 +660,7 @@ int32_t CheatEngine::parseValue(const QString& value, const QString& type)
     if (!ok) {
         return 0;
     }
-    
+
     if (type == "Byte") {
         return val & 0xFF;
     } else if (type == "Word") {
@@ -668,4 +668,55 @@ int32_t CheatEngine::parseValue(const QString& value, const QString& type)
     }
     
     return val;
+}
+
+void CheatEngine::setupHotkeys()
+{
+    QShortcut* toggleAll = new QShortcut(QKeySequence("Ctrl+T"), this);
+    connect(toggleAll, &QShortcut::activated, this, &CheatEngine::toggleAllCheats);
+    
+    for (int i = 0; i < 5; i++) {
+        QShortcut* quickToggle = new QShortcut(QKeySequence(QString("F%1").arg(i+1)), this);
+        connect(quickToggle, &QShortcut::activated, [this, i]() {
+            if (i < m_cheats.count()) {
+                CheatEntry& cheat = m_cheats[i];
+                cheat.enabled = !cheat.enabled;
+                
+                if (cheat.enabled) {
+                    applyCheat(cheat);
+                } else {
+                    removeCheat(cheat);
+                }
+                updateCheatTable();
+                m_logOutput->append(QString("F%1 toggled: %2").arg(i+1).arg(cheat.description));
+            }
+        });
+    }
+    
+    m_logOutput->append("Hotkeys enabled: Ctrl+T (toggle all), F1-F5 (quick toggle)");
+}
+
+void CheatEngine::toggleAllCheats()
+{
+    bool anyEnabled = false;
+    for (const auto& cheat : m_cheats) {
+        if (cheat.enabled) {
+            anyEnabled = true;
+            break;
+        }
+    }
+    
+    bool newState = !anyEnabled;
+    
+    for (auto& cheat : m_cheats) {
+        cheat.enabled = newState;
+        if (newState) {
+            applyCheat(cheat);
+        } else {
+            removeCheat(cheat);
+        }
+    }
+    
+    updateCheatTable();
+    m_logOutput->append(QString("All cheats %1").arg(newState ? "enabled" : "disabled"));
 }
