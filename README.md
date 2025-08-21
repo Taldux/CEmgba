@@ -53,4 +53,4 @@ The included cheat maps are provided for educational and legitimate use purposes
    ```
 
 3. **Run the executable:**
-   The executable will be located in `build-win32/mgba-qt.exe`
+   The executable will be located in `build-win32/mgba.exe`
