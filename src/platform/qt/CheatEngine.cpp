@@ -789,7 +789,7 @@ void CheatEngine::setupHotkeys() {
 	connect(exportShortcut, &QShortcut::activated, this, &CheatEngine::onExportMap);
 
 	for (int i = 0; i < 5; i++) {
-		QShortcut* quickToggle = new QShortcut(QKeySequence(QString("F%1").arg(i + 1)), this);
+		QShortcut* quickToggle = new QShortcut(QKeySequence(QString("Shift+%1").arg(i + 1)), this);
 		connect(quickToggle, &QShortcut::activated, [this, i]() {
 			if (i < m_cheats.count()) {
 				CheatEntry& cheat = m_cheats[i];
@@ -801,12 +801,12 @@ void CheatEngine::setupHotkeys() {
 					removeCheat(cheat);
 				}
 				updateCheatTable();
-				m_logOutput->append(QString("F%1 toggled: %2").arg(i + 1).arg(cheat.description));
+				m_logOutput->append(QString("Shift+%1 toggled: %2").arg(i + 1).arg(cheat.description));
 			}
 		});
 	}
 
-	m_logOutput->append("Hotkeys enabled: Ctrl+T (toggle all), F1-F5 (quick toggle)");
+	m_logOutput->append("Hotkeys enabled: Ctrl+T (toggle all), Shift+1-5 (quick toggle)");
 	m_logOutput->append("Hotkey enabled: Ctrl+E (export cheats)");
 }
 
