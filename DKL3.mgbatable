@@ -1,0 +1,15 @@
+{
+    "author": "User",
+    "cheats": [
+        {
+            "address": "0xFFAA",
+            "description": "Lives",
+            "enabled": true,
+            "frozen": true,
+            "type": "Byte",
+            "value": "10"
+        }
+    ],
+    "game": "DONKEYKONGL",
+    "version": "1.0"
+}

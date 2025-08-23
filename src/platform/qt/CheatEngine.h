@@ -41,6 +41,7 @@ private slots:
     void onAddCheat();
     void onRemoveCheat();
     void onImportMap();
+    void onExportMap();
     void onValueChanged();
     void onCheatTableSelectionChanged();
     void toggleAllCheats();
@@ -50,6 +51,7 @@ private:
     void setupUI();
     void setupCheatManager();
     void updateCheatTable();
+    void autoExportCheats();
     
     // mGBA integration functions (using basic types)
     void initCheatDevice();
@@ -67,6 +69,7 @@ private:
     QPushButton *m_addCheatButton;
     QPushButton *m_removeCheatButton;
     QPushButton *m_importMapButton;
+    QPushButton *m_exportMapButton;
 
     // Cheat editor
     QGroupBox *m_editorGroup;
@@ -115,6 +118,7 @@ private:
     std::shared_ptr<QGBA::CoreController> m_controller;
     
     struct mCheatDevice* m_cheatDevice;
+    QString getCurrentGameName();
 
 };
 

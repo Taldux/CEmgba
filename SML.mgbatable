@@ -1,5 +1,5 @@
 {
-  "game": "Super Mario Land",
+  "game": "SUPER MARIOLAND",
   "version": "1.0",
   "author": "Meksi, Ba",
   "description": "Example Cheats for Super Mario Land",
@@ -31,7 +31,7 @@
     {
       "address": "0xC0A2",
       "value": "10",
-      "description": "100000 Score",
+      "description": "Score",
       "type": "Byte",
       "enabled": false,
       "frozen": true
